@@ -1,0 +1,22 @@
+/Data
+/LOG
+/MODEL
+/__pycache__
+/clustering_analysis.ipynb
+/clustering_analysis_chem_nir_spectra.ipynb
+/clustering_analysis_chem_uv_vis_spectra.ipynb
+/clustering_analysis_nir_5MM_spectra.ipynb
+/clustering_analysis_nir_spectra.ipynb
+/clustering_analysis_uv_vis_spectra.ipynb
+/comparison_abs_spectra.ipynb
+/comparison_abs_spectra50mm_vs_100mm.ipynb
+/comparison_abs_spectra5mm.ipynb
+/comparison_nir_spectra5mm_vs_1mm copy.ipynb
+/data_analysis.ipynb
+/feaures_extraction.ipynb
+/feaures_extraction_generated_samples.ipynb
+/linear_model_interpretation.ipynb
+/losses
+/model_interpretation.ipynb
+/read_data.ipynb
+/tests
