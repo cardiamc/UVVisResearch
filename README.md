@@ -57,7 +57,7 @@ uvvislib/
 ### Install from source
 ```bash
 # Clone the repository
-git clone <repository-url>
+git clone https://github.com/cardiamc/UVVisResearch.git
 cd UVVisResearch
 
 # Install in development mode
