@@ -7,18 +7,22 @@ This module provides various machine learning models including:
 - CNN (Convolutional Neural Network)
 - CNN-MLP (Hybrid model)
 - Random Forest
+- Clustering algorithms
 """
 
 from .base import BaseModel
-from .mlp import MLPModel
-from .cnn import CNNModel
+from .mlp import MLPRegressor
+from .cnn import CNNRegressor
 from .cnn_mlp import CNNMLPRegressor
-from .random_forest import RandomForestModel
+from .random_forest import RandomForestRegressor
+from .clustering import SpectralClusterer, ClusteringAnalyzer
 
 __all__ = [
     'BaseModel',
-    'MLPModel', 
-    'CNNModel',
+    'MLPRegressor', 
+    'CNNRegressor',
     'CNNMLPRegressor',
-    'RandomForestModel'
+    'RandomForestRegressor',
+    'SpectralClusterer',
+    'ClusteringAnalyzer'
 ]

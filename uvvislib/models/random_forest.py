@@ -354,3 +354,5 @@ class RandomForestRegressor(BaseModel):
         self.is_fitted = True
         
         return self 
+
+RandomForestModel = RandomForestRegressor 

@@ -7,7 +7,7 @@ import torch.nn as nn
 import torch.optim as optim
 import numpy as np
 import pandas as pd
-from typing import Dict, Any, Optional, Union, List
+from typing import Dict, Any, Optional, Union, List, Tuple
 import joblib
 from pathlib import Path
 
@@ -348,3 +348,5 @@ class MLPRegressor(BaseModel):
             })
         
         return summary 
+
+MLPModel = MLPRegressor 

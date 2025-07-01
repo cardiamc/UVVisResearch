@@ -14,10 +14,11 @@ from .utils.logging import setup_logging
 from .data.loader import DataLoader
 from .data.preprocessing import Preprocessor
 from .models.base import BaseModel
-from .models.mlp import MLPModel
-from .models.cnn import CNNModel
+from .models.mlp import MLPRegressor
+from .models.cnn import CNNRegressor
 from .models.cnn_mlp import CNNMLPRegressor
-from .models.random_forest import RandomForestModel
+from .models.random_forest import RandomForestRegressor
+from .models.clustering import SpectralClusterer, ClusteringAnalyzer
 
 # Evaluation imports
 from .evaluation.metrics import (
@@ -32,6 +33,11 @@ from .evaluation.cross_validation import (
 # Visualization imports
 from .visualization.plots import Plotter
 
+# Persistence imports
+from .persistence.model_manager import ModelManager
+from .persistence.experiment_manager import ExperimentManager
+from .persistence.data_persistence import DataPersistence
+
 __all__ = [
     # Core utilities
     "Config",
@@ -43,10 +49,12 @@ __all__ = [
     
     # Models
     "BaseModel",
-    "MLPModel",
-    "CNNModel", 
+    "MLPRegressor",
+    "CNNRegressor", 
     "CNNMLPRegressor",
-    "RandomForestModel",
+    "RandomForestRegressor",
+    "SpectralClusterer",
+    "ClusteringAnalyzer",
     
     # Evaluation metrics
     "r2_score",
@@ -67,5 +75,10 @@ __all__ = [
     "stratified_regression_cv",
     
     # Visualization
-    "Plotter"
+    "Plotter",
+    
+    # Persistence
+    "ModelManager",
+    "ExperimentManager",
+    "DataPersistence"
 ]

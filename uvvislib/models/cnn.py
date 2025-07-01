@@ -412,3 +412,5 @@ class CNNRegressor(BaseModel):
             })
         
         return summary 
+
+CNNModel = CNNRegressor 
