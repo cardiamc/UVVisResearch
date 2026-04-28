@@ -100,6 +100,7 @@ class CNN_MLP(nn.Module):
         # Second convolution layer
         self.conv2 = nn.Conv1d(hidden_size, 1, kernel_size=kernel_size, padding=0)
         l_shape = calculate_output_length(l_shape, kernel_size)
+        self.pool2 = nn.MaxPool1d(kernel_size=kernel_size, stride=stride_size)
         l_shape = calculate_output_length(l_shape, kernel_size, stride=stride_size)
         
         # CNN fully connected layer
@@ -138,7 +139,7 @@ class CNN_MLP(nn.Module):
         x_abs = x_abs.view(x_abs.size(0), 1, -1)  # (batch, 1, n_abs)
         x_abs = self.pool1(F.relu(self.conv1(x_abs)))
         x_abs = self.batch_norm1(x_abs)
-        x_abs = self.pool1(F.relu(self.conv2(x_abs)))
+        x_abs = self.pool2(F.relu(self.conv2(x_abs)))
         x_abs = F.relu(self.fc1(x_abs))
         
         # MLP branch for extracted features
@@ -441,101 +442,60 @@ class CNNMLPRegressor(BaseModel):
         
         return predictions.cpu().numpy()
     
-    def get_feature_importance(self, X: Union[np.ndarray, pd.DataFrame]) -> Dict[str, np.ndarray]:
+    def get_feature_importance(
+        self,
+        X: Optional[Union[np.ndarray, pd.DataFrame]] = None,
+    ) -> Optional[Dict[str, np.ndarray]]:
         """
         Get feature importance for both spectral and extracted features.
-        
+
         Args:
-            X: Input features
-            
+            X: Input features used to compute gradient-based importance. If
+                None, returns the most recently computed importance (or None).
+
         Returns:
-            Dictionary with feature importance for both branches
+            Dictionary with feature importance for both branches, or None if
+            no importance has been computed yet.
         """
+        if X is None:
+            return self.feature_importance
+
         if not self.is_fitted or self.model is None:
             raise ValueError("Model must be fitted before computing feature importance")
-        
-        # Validate and preprocess data
+
         X, _ = self.validate_data(X, None)
-        
-        # Split features
-        X_abs = X[:, :self.n_abs]
-        X_extr = X[:, self.n_abs:]
-        
-        # Compute importance using gradients
+
         X_tensor = torch.FloatTensor(X).to(self.device)
         X_tensor.requires_grad_(True)
-        
+
         self.model.eval()
         output = self.model(X_tensor)
-        
-        # Compute gradients for each target
+
         importance_abs = []
         importance_extr = []
-        
+
         for i in range(self.n_targets):
-            # Zero gradients
             self.model.zero_grad()
-            
-            # Backward pass for this target
             output[:, i].backward(torch.ones_like(output[:, i]), retain_graph=True)
-            
-            # Get gradients
+
             grad_abs = X_tensor.grad[:, :self.n_abs].abs().mean(dim=0).cpu().numpy()
             grad_extr = X_tensor.grad[:, self.n_abs:].abs().mean(dim=0).cpu().numpy()
-            
+
             importance_abs.append(grad_abs)
             importance_extr.append(grad_extr)
-        
-        return {
+
+        result = {
             'absorption_features': np.array(importance_abs),
-            'extracted_features': np.array(importance_extr)
+            'extracted_features': np.array(importance_extr),
         }
-    
-    def save_model(self, filepath: Union[str, Path]) -> None:
-        """Save the model."""
-        if not self.is_fitted or self.model is None:
-            raise ValueError("Model must be fitted before saving")
-        
-        filepath = Path(filepath)
-        filepath.parent.mkdir(parents=True, exist_ok=True)
-        
-        # Save PyTorch model
-        torch.save(self.model.state_dict(), filepath)
-        
-        # Save metadata
-        metadata = {
-            'model_params': self.model_params,
-            'n_features': self.n_features,
-            'n_targets': self.n_targets,
-            'training_history': self.training_history,
-            'is_fitted': self.is_fitted
-        }
-        
-        metadata_path = filepath.with_suffix('.json')
-        self._save_metadata(metadata, metadata_path)
-        
-        self.logger.info(f"Model saved to {filepath}")
-    
-    def load_model(self, filepath: Union[str, Path]) -> None:
-        """Load the model."""
-        filepath = Path(filepath)
-        
-        # Load metadata
-        metadata_path = filepath.with_suffix('.json')
-        metadata = self._load_metadata(metadata_path)
-        
-        # Update model parameters
-        self.model_params = metadata['model_params']
-        self.n_features = metadata['n_features']
-        self.n_targets = metadata['n_targets']
-        self.training_history = metadata['training_history']
-        self.is_fitted = metadata['is_fitted']
-        
-        # Load PyTorch model
-        self._load_model_impl(filepath)
-        
-        self.logger.info(f"Model loaded from {filepath}")
-    
+        self.feature_importance = result
+        return result
+
+    def _save_model_impl(self, filepath: Path) -> None:
+        """Save the PyTorch model."""
+        if self.model is not None:
+            torch.save(self.model.state_dict(), filepath)
+
     def _load_model_impl(self, filepath: Path) -> None:
         """Load the PyTorch model."""
         if self.model is None:

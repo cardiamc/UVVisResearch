@@ -5,6 +5,7 @@ Data preprocessing utilities for UV-Vis analysis.
 import pandas as pd
 import numpy as np
 from typing import Tuple, List, Optional, Dict, Any, Union
+from scipy.ndimage import gaussian_filter1d
 from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler
 from sklearn.decomposition import PCA
 from sklearn.impute import SimpleImputer
@@ -164,10 +165,42 @@ class Preprocessor:
         self.processed_targets = targets_df.copy()
         return targets_df
     
+    def smooth_spectra(
+        self,
+        features_df: pd.DataFrame,
+        sigma: Optional[float] = None,
+    ) -> pd.DataFrame:
+        """
+        Apply a 1-D Gaussian filter row-wise to spectral features.
+
+        This is the canonical UV-Vis smoothing step (sigma=1.5 by default,
+        matching the original training pipeline).
+
+        Args:
+            features_df: Spectral features DataFrame (rows = samples,
+                columns = wavelengths).
+            sigma: Standard deviation of the Gaussian kernel. If None,
+                uses ``self.config.gaussian_sigma``.
+
+        Returns:
+            Smoothed features DataFrame with the same shape and columns.
+        """
+        if sigma is None:
+            sigma = self.config.gaussian_sigma
+
+        self.logger.info(f"Smoothing spectra with Gaussian filter (sigma={sigma})")
+
+        smoothed = gaussian_filter1d(features_df.values, sigma=sigma, axis=1)
+        return pd.DataFrame(
+            smoothed,
+            columns=features_df.columns,
+            index=features_df.index,
+        )
+
     def normalize_features(
-        self, 
-        features_df: pd.DataFrame, 
-        scaler_type: str = 'standard',
+        self,
+        features_df: pd.DataFrame,
+        scaler_type: str = 'minmax',
         fit: bool = True
     ) -> pd.DataFrame:
         """
@@ -323,50 +356,61 @@ class Preprocessor:
         features_df: pd.DataFrame,
         targets_df: pd.DataFrame,
         clean_data: bool = True,
+        smooth_spectra: Optional[bool] = None,
         normalize_features: bool = True,
+        scaler_type: str = 'minmax',
         apply_pca: Optional[bool] = None,
         engineer_features: bool = False,
         log_targets: Optional[bool] = None
     ) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """
         Complete preprocessing pipeline.
-        
+
+        The default order is: clean → Gaussian smoothing (sigma=1.5) →
+        engineered features → MinMax scaling → optional PCA → optional log
+        target transform. This matches the canonical training pipeline.
+
         Args:
             features_df: Features DataFrame
             targets_df: Targets DataFrame
             clean_data: Whether to clean the data
+            smooth_spectra: Whether to apply Gaussian smoothing. If None,
+                uses ``self.config.apply_smoothing``.
             normalize_features: Whether to normalize features
+            scaler_type: Scaler to use when ``normalize_features`` is True
+                ('minmax', 'standard', or 'robust'). Defaults to 'minmax'.
             apply_pca: Whether to apply PCA
             engineer_features: Whether to engineer features
             log_targets: Whether to log-transform targets
-            
+
         Returns:
             Tuple of preprocessed (features_df, targets_df)
         """
         self.logger.info("Starting preprocessing pipeline")
-        
-        # Clean data
+
         if clean_data:
             features_df, targets_df = self.clean_data(features_df, targets_df)
-        
-        # Engineer features
+
+        if smooth_spectra is None:
+            smooth_spectra = self.config.apply_smoothing
+        if smooth_spectra:
+            features_df = self.smooth_spectra(features_df)
+
         if engineer_features:
             features_df = self.engineer_features(features_df)
-        
-        # Normalize features
+
         if normalize_features:
-            features_df = self.normalize_features(features_df, fit=True)
-        
-        # Apply PCA
+            features_df = self.normalize_features(
+                features_df, scaler_type=scaler_type, fit=True
+            )
+
         if apply_pca is None:
             apply_pca = self.config.apply_pca
-        
         if apply_pca:
             features_df = self.apply_pca(features_df, fit=True)
-        
-        # Transform targets
+
         targets_df = self.apply_target_transformation(targets_df, log_targets)
-        
+
         self.logger.info("Preprocessing pipeline completed")
         return features_df, targets_df
     
@@ -386,11 +430,15 @@ class Preprocessor:
             Tuple of transformed (features_df, targets_df)
         """
         self.logger.info("Transforming test data")
-        
+
         # Handle missing values
         if self.imputer is not None:
             features_df = self._handle_missing_values(features_df)
-        
+
+        # Apply Gaussian smoothing (matches the training pipeline; stateless)
+        if self.config.apply_smoothing:
+            features_df = self.smooth_spectra(features_df)
+
         # Normalize features
         if self.scaler is not None:
             features_df = self.normalize_features(features_df, fit=False)

@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "uvvislib"
+version = "0.1.0"
+description = "Modular Python library for UV-Vis / NIR spectroscopy and machine learning."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.9"
+authors = [{ name = "UVVisResearch Team" }]
+dependencies = [
+    "numpy",
+    "pandas",
+    "scikit-learn",
+    "scipy",
+    "matplotlib",
+    "seaborn",
+    "torch",
+    "joblib",
+]
+
+[project.optional-dependencies]
+interpret = ["captum"]
+dev = ["pytest", "black"]
+
+[tool.setuptools.packages.find]
+include = ["uvvislib*"]
+exclude = ["tests*", "examples*", "docs*", "Data*", "data*", "research_input*"]
+
+[tool.black]
+line-length = 100

@@ -81,106 +81,110 @@ The library requires the following key dependencies:
 ### Basic Usage Example
 
 ```python
-from uvvislib.data.loader import load_data
-from uvvislib.data.preprocessing import preprocess_spectra
-from uvvislib.models.mlp import MLPRegressor
-from uvvislib.evaluation.metrics import calculate_metrics
-from uvvislib.utils.config import Config
-
-# Load and preprocess data
-X, y = load_data('spectral_data.csv')
-X_processed = preprocess_spectra(X, normalize=True, baseline_correction=True)
-
-# Configure and train model
-config = Config(
-    input_size=X_processed.shape[1],
-    hidden_sizes=[128, 64],
-    learning_rate=0.001,
-    batch_size=32,
-    epochs=100
+from uvvislib import (
+    Config, DataLoader, Preprocessor, MLPRegressor, compute_evaluation,
 )
 
-model = MLPRegressor(config)
-model.fit(X_processed, y)
+# Configuration drives every component (paths, target list, CV seed, etc.)
+config = Config(
+    data_path="./Data/",
+    uv_vis_data_file="abs_spectra_100mm.csv",
+    chemical_data_file="Full_chemical_analysis.csv",
+    target_variables=["COD"],
+    log_target=True,  # COD is predicted in log space
+)
 
-# Evaluate model
-predictions = model.predict(X_processed)
-metrics = calculate_metrics(y, predictions)
-print(f"R² Score: {metrics['r2_score']:.4f}")
+# Load + combine the spectral and chemical data
+loader = DataLoader(config)
+loader.load_uv_vis_data()
+loader.load_chemical_data()
+loader.combine_data()
+features_df, targets_df = loader.extract_features_and_targets()
+
+# Canonical preprocessing: Gaussian smoothing (sigma=1.5) + MinMax + log target
+pre = Preprocessor(config)
+X_train, y_train = pre.preprocess_pipeline(features_df, targets_df)
+
+# Train an MLP regressor
+model = MLPRegressor(config, hidden_size=200, learning_rate=1e-3, epochs=2000)
+model.fit(X_train.values, y_train.values)
+
+predictions = model.predict(X_train.values)
+metrics = compute_evaluation(y_train.values, predictions, log_target=config.log_target)
+print(f"R² = {metrics['r2']:.4f}, RMSE = {metrics['rmse']:.4f}")
 ```
 
 ### Advanced Usage with Cross-Validation
 
 ```python
-from uvvislib.evaluation.cross_validation import CrossValidator
-from uvvislib.models.cnn import CNNRegressor
-from uvvislib.persistence.experiment_manager import ExperimentManager
-
-# Set up cross-validation
-cv = CrossValidator(n_splits=5, random_state=42)
-
-# Configure CNN model
-config = Config(
-    input_size=X.shape[1],
-    conv_layers=[32, 64],
-    fc_layers=[128, 64],
-    learning_rate=0.001
+from uvvislib import (
+    Config, CNNRegressor, DoubleKFoldCV, ExperimentManager,
 )
 
-# Train with cross-validation
-model = CNNRegressor(config)
-cv_results = cv.cross_validate(model, X, y)
+config = Config(target_variables=["COD"], log_target=True)
 
-# Save experiment
-exp_manager = ExperimentManager()
-exp_manager.save_experiment(
-    model=model,
-    results=cv_results,
-    config=config,
-    name="cnn_cv_experiment"
+cv = DoubleKFoldCV(outer_splits=5, inner_splits=4, random_state=42)
+param_grid = {
+    "hidden_size": [200, 400, 800],
+    "kernel_size": [3, 5],
+    "learning_rate": [1e-4, 5e-4, 1e-3],
+}
+
+results = cv.fit(
+    X_train.values, y_train.values,
+    model=CNNRegressor(config),
+    param_grid=param_grid,
+    n_iter=20,
+    log_target=config.log_target,
 )
+
+exp = ExperimentManager(config, base_path="./experiments")
+experiment_id = exp.start_experiment("cnn_cv", description="Nested CV on COD")
+exp.save_results(results, filename="cv_results.json")
+exp.end_experiment()
 ```
 
 ### Clustering Analysis
 
 ```python
-from uvvislib.models.clustering import SpectralClustering
-from uvvislib.visualization.plots import plot_clustering_results
+from uvvislib import Config, SpectralClusterer, Plotter
 
-# Perform clustering
-clustering = SpectralClustering(n_clusters=3, method='kmeans')
-cluster_labels = clustering.fit_predict(X)
+config = Config()
+clusterer = SpectralClusterer(config, algorithm="kmeans", n_clusters=3)
+clusterer.fit(X_train.values)
+labels = clusterer.predict(X_train.values)
 
-# Visualize results
-plot_clustering_results(X, cluster_labels, title="Spectral Clustering Results")
+Plotter(config).plot_clusters(X_train.values, labels, title="Spectral clusters")
 ```
 
 ## 🔧 Configuration
 
-The library uses a centralized configuration system:
+The library uses a centralized `Config` dataclass. The defaults below match the
+canonical UV-Vis pipeline (200–727.5 nm at 2.5 nm step → 212 features, Gaussian
+smoothing, MinMax scaling).
 
 ```python
-from uvvislib.utils.config import Config
+from uvvislib import Config
 
 config = Config(
-    # Model parameters
-    input_size=1000,
-    hidden_sizes=[256, 128, 64],
-    learning_rate=0.001,
-    batch_size=32,
-    epochs=200,
-    
-    # Training parameters
-    validation_split=0.2,
-    early_stopping_patience=10,
-    
-    # Data preprocessing
-    normalize=True,
-    baseline_correction=True,
-    
-    # Logging
-    log_level="INFO",
-    save_logs=True
+    # Spectral grid (212 wavelengths)
+    wavelength_start=200.0,
+    wavelength_end=730.0,
+    wavelength_step=2.5,
+
+    # Preprocessing
+    apply_smoothing=True,
+    gaussian_sigma=1.5,
+    log_target=True,
+
+    # Cross-validation
+    k_fold_splits=5,
+    k_fold_inner_splits=4,
+    random_state=42,
+
+    # Output
+    output_dir="./LOG/",
+    save_models=True,
 )
 ```
 
@@ -189,11 +193,11 @@ config = Config(
 ### Neural Networks
 - **MLPRegressor**: Multi-layer perceptron for regression
 - **CNNRegressor**: Convolutional neural network for spectral data
-- **CNNMLPRegressor**: Hybrid CNN-MLP architecture
+- **CNNMLPRegressor**: Hybrid CNN-MLP architecture (spectra + extracted features)
 
 ### Traditional ML
 - **RandomForestRegressor**: Random Forest implementation
-- **SpectralClustering**: Clustering algorithms for spectral data
+- **SpectralClusterer**: Clustering (kmeans, hierarchical, dbscan, gmm) for spectral data
 
 ## 📈 Evaluation Metrics
 
@@ -207,13 +211,11 @@ The library provides comprehensive evaluation metrics:
 ## 🎯 Model Interpretation
 
 ```python
-from uvvislib.models.random_forest import RandomForestRegressor
+from uvvislib import Config, RandomForestRegressor
 
-# Train Random Forest
-rf_model = RandomForestRegressor(n_estimators=100)
-rf_model.fit(X, y)
+rf_model = RandomForestRegressor(Config(), n_estimators=100, random_state=42)
+rf_model.fit(X_train.values, y_train.values)
 
-# Get feature importance
 importance = rf_model.get_feature_importance()
 print("Top 10 most important features:", importance[:10])
 ```
@@ -221,20 +223,17 @@ print("Top 10 most important features:", importance[:10])
 ## 💾 Experiment Management
 
 ```python
-from uvvislib.persistence.experiment_manager import ExperimentManager
+from uvvislib import Config, ExperimentManager
 
-# Save experiment
-exp_manager = ExperimentManager()
-exp_manager.save_experiment(
-    model=model,
-    results=results,
-    config=config,
-    name="experiment_001",
-    description="MLP with baseline correction"
+exp = ExperimentManager(Config(), base_path="./experiments")
+experiment_id = exp.start_experiment(
+    "mlp_baseline",
+    description="MLP on COD with default Gaussian + MinMax preprocessing",
+    tags=["mlp", "cod"],
 )
 
-# Load experiment
-loaded_exp = exp_manager.load_experiment("experiment_001")
+exp.save_results({"r2": 0.91, "rmse": 0.18})
+exp.end_experiment(status="completed")
 ```
 
 ## 🧪 Testing

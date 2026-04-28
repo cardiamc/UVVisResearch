@@ -179,17 +179,20 @@ class BaseModel(ABC):
         
         return X, y
     
-    def _update_model_info(self, X: np.ndarray, y: np.ndarray) -> None:
+    def _update_model_info(self, X: np.ndarray, y: Optional[np.ndarray]) -> None:
         """
         Update model information based on data.
-        
+
         Args:
             X: Features
-            y: Targets
+            y: Targets, or None for unsupervised models (e.g. clustering).
         """
         self.n_features = X.shape[1]
-        self.n_targets = y.shape[1] if y.ndim > 1 else 1
-        
+        if y is None:
+            self.n_targets = 0
+        else:
+            self.n_targets = y.shape[1] if y.ndim > 1 else 1
+
         self.logger.info(f"Model info: {self.n_features} features, {self.n_targets} targets")
     
     def save_model(self, filepath: Union[str, Path]) -> None:

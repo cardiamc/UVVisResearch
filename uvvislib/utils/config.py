@@ -24,9 +24,11 @@ class Config:
     chemical_data_file: str = "Full_chemical_analysis.csv"
     
     # Feature configuration
-    wavelength_start: int = 210
-    wavelength_end: int = 622
-    wavelength_step: int = 2
+    # Default grid: 200–727.5 nm at 2.5 nm step → 212 features
+    # (np.arange uses a half-open interval, so end=730.0 includes 727.5)
+    wavelength_start: float = 200.0
+    wavelength_end: float = 730.0
+    wavelength_step: float = 2.5
     categorical_features: List[str] = field(default_factory=lambda: ['FASE PROCESSO'])
     
     # Target variables (water quality indicators)
@@ -54,6 +56,8 @@ class Config:
     use_categorical_features: bool = False
     apply_pca: bool = False
     pca_components: int = 15
+    apply_smoothing: bool = True
+    gaussian_sigma: float = 1.5
     
     # Cross-validation configuration
     k_fold_splits: int = 5
@@ -97,22 +101,31 @@ class Config:
     save_predictions: bool = True
     save_plots: bool = True
     
+    def _format_wavelength(self, wav: float) -> str:
+        """Format a wavelength as the column name used in the CSV files.
+
+        Integer-valued wavelengths render without a trailing ``.0`` ('200'),
+        non-integers keep a decimal ('202.5'). This matches both common
+        conventions in the source data files.
+        """
+        return str(int(wav)) if float(wav).is_integer() else str(wav)
+
     @property
     def feature_wavelengths(self) -> List[str]:
         """Generate feature wavelength strings."""
-        return [str(wav) for wav in np.arange(
-            self.wavelength_start, 
-            self.wavelength_end, 
-            self.wavelength_step
+        return [self._format_wavelength(wav) for wav in np.arange(
+            self.wavelength_start,
+            self.wavelength_end,
+            self.wavelength_step,
         )]
-    
+
     @property
     def spectrum_wavelengths(self) -> List[str]:
         """Generate spectrum wavelength strings."""
-        return [str(wav) for wav in np.arange(
-            self.wavelength_start, 
-            self.wavelength_end, 
-            self.wavelength_step
+        return [self._format_wavelength(wav) for wav in np.arange(
+            self.wavelength_start,
+            self.wavelength_end,
+            self.wavelength_step,
         )]
     
     def to_dict(self) -> Dict[str, Any]:
@@ -127,6 +140,8 @@ class Config:
             'target_variables': self.target_variables,
             'log_target': self.log_target,
             'use_categorical_features': self.use_categorical_features,
+            'apply_smoothing': self.apply_smoothing,
+            'gaussian_sigma': self.gaussian_sigma,
             'k_fold_splits': self.k_fold_splits,
             'k_fold_inner_splits': self.k_fold_inner_splits,
             'random_state': self.random_state,
