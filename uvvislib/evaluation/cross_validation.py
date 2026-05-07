@@ -9,6 +9,7 @@ with hyperparameter tuning.
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Tuple, Any, Optional, Union
+from sklearn.base import clone
 from sklearn.model_selection import (
     KFold, StratifiedKFold, RandomizedSearchCV, GridSearchCV,
     ParameterGrid, ParameterSampler, cross_val_score
@@ -151,7 +152,7 @@ class DoubleKFoldCV:
                 'test': test_idx
             })
             
-            logging.info(f"Fold {fold + 1} - Test RMSE: {test_score['RMSE']:.4f}")
+            logging.info(f"Fold {fold + 1} - Test RMSE: {np.mean(test_score['rmse']):.4f}")
         
         return results
     
@@ -205,25 +206,27 @@ class DoubleKFoldCV:
             random_state=self.random_state, return_train_score=True
         )
         
-        search.fit(X, y, groups=stratify_labels)
-        
-        # Extract scores
+        search.fit(X, y)
+
+        # cv_results_ key names differ: dict scoring uses metric names, string scoring uses generic names
+        if log_target:
+            rank_key = 'rank_test_neg_mean_squared_error'
+            rmse_train_key = 'mean_train_neg_mean_squared_error'
+            rmse_val_key = 'mean_test_neg_mean_squared_error'
+        else:
+            rank_key = 'rank_test_score'
+            rmse_train_key = 'mean_train_score'
+            rmse_val_key = 'mean_test_score'
+
+        best_mask = search.cv_results_[rank_key] == 1
         inner_scores = {
             'train': {
-                'RMSE': -search.cv_results_['mean_train_neg_mean_squared_error'][
-                    search.cv_results_['rank_test_neg_mean_squared_error'] == 1
-                ][0],
-                'R2': search.cv_results_['mean_train_R2'][
-                    search.cv_results_['rank_test_neg_mean_squared_error'] == 1
-                ][0] if log_target else None
+                'RMSE': -search.cv_results_[rmse_train_key][best_mask][0],
+                'R2': search.cv_results_['mean_train_R2'][best_mask][0] if log_target else None
             },
             'val': {
-                'RMSE': -search.cv_results_['mean_test_neg_mean_squared_error'][
-                    search.cv_results_['rank_test_neg_mean_squared_error'] == 1
-                ][0],
-                'R2': search.cv_results_['mean_test_R2'][
-                    search.cv_results_['rank_test_neg_mean_squared_error'] == 1
-                ][0] if log_target else None
+                'RMSE': -search.cv_results_[rmse_val_key][best_mask][0],
+                'R2': search.cv_results_['mean_test_R2'][best_mask][0] if log_target else None
             }
         }
         
@@ -246,7 +249,8 @@ class DoubleKFoldCV:
         Returns:
             Trained model
         """
-        final_model = model(**best_params)
+        final_model = clone(model)
+        final_model.set_params(**best_params)
         final_model.fit(X, y)
         return final_model
     

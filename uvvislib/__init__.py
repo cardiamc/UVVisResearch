@@ -30,6 +30,22 @@ from .evaluation.cross_validation import (
     stratified_regression_cv
 )
 
+# Generative imports
+from .generative import (
+    BaseGenerativeModel,
+    CGAN,
+    SmoteRegression,
+    KnnInterpolation,
+    NoiseAugmenter,
+)
+from .generative.evaluation import (
+    spectral_fidelity_metrics,
+    pca_metrics,
+    downstream_utility,
+    reliability_score,
+    compare_generators,
+)
+
 # Visualization imports
 from .visualization.plots import Plotter
 
@@ -74,6 +90,20 @@ __all__ = [
     "create_cv_scorers",
     "stratified_regression_cv",
     
+    # Generative models
+    "BaseGenerativeModel",
+    "CGAN",
+    "SmoteRegression",
+    "KnnInterpolation",
+    "NoiseAugmenter",
+
+    # Generative evaluation
+    "spectral_fidelity_metrics",
+    "pca_metrics",
+    "downstream_utility",
+    "reliability_score",
+    "compare_generators",
+
     # Visualization
     "Plotter",
     

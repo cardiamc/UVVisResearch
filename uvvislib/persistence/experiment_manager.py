@@ -340,7 +340,11 @@ class ExperimentManager:
     def _make_serializable(self, obj: Any) -> Any:
         """Convert object to JSON serializable format."""
         if isinstance(obj, dict):
-            return {k: self._make_serializable(v) for k, v in obj.items()}
+            return {
+                (int(k) if isinstance(k, np.integer) else str(k) if not isinstance(k, (str, int, float, bool)) else k):
+                self._make_serializable(v)
+                for k, v in obj.items()
+            }
         elif isinstance(obj, list):
             return [self._make_serializable(item) for item in obj]
         elif isinstance(obj, np.ndarray):

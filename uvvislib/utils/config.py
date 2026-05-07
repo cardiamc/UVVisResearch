@@ -94,6 +94,37 @@ class Config:
         'min_samples_leaf': [1, 3, 5, 10],
         'min_samples_split': [2, 3, 5, 8, 10, 15, 20, 30]
     })
+
+    # Generative model configuration (CGAN + baselines)
+    # n_z=200 matches the research code checkpoints; SKILL.md example uses 62 —
+    # change this field if you want to train a new model from scratch with a
+    # different noise dimension (pre-trained weights are NOT cross-compatible).
+    cgan_config: Dict[str, Any] = field(default_factory=lambda: {
+        # Architecture
+        'input_size':    212,
+        'n_z':           200,
+        'class_num':     1,
+        # Optimiser
+        'lrG':           1e-4,
+        'lrD':           1e-4,
+        'beta1':         0.5,
+        'beta2':         0.999,
+        'weight_decay':  1e-4,
+        # Training
+        'epochs':        200,
+        'batch_size':    64,
+        'lambda_reg':    0.01,
+        'random_state':  42,
+        # Sampling
+        'n_samples_gen': 500,
+        # SMOTE
+        'smote_n_bins':      10,
+        'smote_k_neighbors': 5,
+        # kNN interpolation
+        'knn_k_neighbors': 5,
+        # Noise augmentation
+        'noise_sigma': 0.1,
+    })
     
     # Output configuration
     output_dir: str = "./LOG/"
@@ -150,6 +181,7 @@ class Config:
             'mlp_config': self.mlp_config,
             'cnn_config': self.cnn_config,
             'rf_config': self.rf_config,
+            'cgan_config': self.cgan_config,
             'output_dir': self.output_dir
         }
     

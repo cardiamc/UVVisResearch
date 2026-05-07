@@ -9,10 +9,12 @@ This module provides comprehensive plotting functions for:
 - Training history plots
 """
 
+import math
 import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
 import pandas as pd
+from sklearn.decomposition import PCA
 from typing import Dict, List, Tuple, Any, Optional, Union
 from pathlib import Path
 import warnings
@@ -722,7 +724,338 @@ class Plotter:
         return fig
 
 
+# ---------------------------------------------------------------------------
+# Generative-model plotting helpers
+# ---------------------------------------------------------------------------
+
+def _confidence_ellipse(
+    x: np.ndarray,
+    y: np.ndarray,
+    ax,
+    n_std: float = 2.0,
+    facecolor: str = "none",
+    **kwargs,
+):
+    """Draw a covariance confidence ellipse on *ax*."""
+    from matplotlib.patches import Ellipse
+    import matplotlib.transforms as transforms
+
+    if x.size != y.size:
+        raise ValueError("x and y must be the same size")
+    cov = np.cov(x, y)
+    pearson = cov[0, 1] / np.sqrt(cov[0, 0] * cov[1, 1])
+    ell_rx = np.sqrt(1 + pearson)
+    ell_ry = np.sqrt(1 - pearson)
+    ellipse = Ellipse(
+        (0, 0), width=ell_rx * 2, height=ell_ry * 2, facecolor=facecolor, **kwargs
+    )
+    scale_x = np.sqrt(cov[0, 0]) * n_std
+    scale_y = np.sqrt(cov[1, 1]) * n_std
+    transf = (
+        transforms.Affine2D()
+        .rotate_deg(45)
+        .scale(scale_x, scale_y)
+        .translate(np.mean(x), np.mean(y))
+    )
+    ellipse.set_transform(transf + ax.transData)
+    return ax.add_patch(ellipse)
+
+
+def plot_gan_losses(
+    history: Dict[str, list],
+    save_path: Optional[Union[str, Path]] = None,
+    show: bool = False,
+    figsize: Tuple[int, int] = (10, 4),
+    dpi: int = 100,
+) -> "plt.Figure":
+    """
+    Plot discriminator and generator loss curves from a CGAN training history.
+
+    Parameters
+    ----------
+    history : dict
+        ``CGAN.training_history`` — must contain ``"D_loss"`` and ``"G_loss"`` keys.
+    save_path : str or Path, optional
+    show : bool
+    """
+    fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
+    epochs = range(1, len(history["D_loss"]) + 1)
+    ax.plot(epochs, history["D_loss"], label="D_loss", color="steelblue")
+    ax.plot(epochs, history["G_loss"], label="G_loss", color="tomato")
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel("Loss")
+    ax.set_title("GAN Training Losses")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    plt.tight_layout()
+    if save_path:
+        fig.savefig(save_path, dpi=dpi, bbox_inches="tight")
+    if show:
+        plt.show()
+    return fig
+
+
+def plot_generative_samples(
+    X_real: np.ndarray,
+    X_synth: np.ndarray,
+    wavelengths: Optional[np.ndarray] = None,
+    title: str = "Real vs Synthetic Spectra",
+    save_path: Optional[Union[str, Path]] = None,
+    show: bool = False,
+    figsize: Tuple[int, int] = (12, 5),
+    dpi: int = 100,
+) -> "plt.Figure":
+    """
+    Overlay mean ± 1 SD for real and synthetic spectra.
+
+    Parameters
+    ----------
+    X_real : ndarray of shape (n_real, n_wavelengths)
+    X_synth : ndarray of shape (n_synth, n_wavelengths)
+    wavelengths : ndarray of shape (n_wavelengths,), optional
+        Defaults to 200–727.5 nm at 2.5 nm step.
+    """
+    if wavelengths is None:
+        wavelengths = np.arange(200, 730, 2.5)
+
+    real_mean = np.mean(X_real, axis=0)
+    real_std = np.std(X_real, axis=0)
+    synth_mean = np.mean(X_synth, axis=0)
+    synth_std = np.std(X_synth, axis=0)
+
+    fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
+    ax.plot(wavelengths, real_mean, "b-", label="Real (mean)", linewidth=2)
+    ax.fill_between(
+        wavelengths, real_mean - real_std, real_mean + real_std,
+        color="blue", alpha=0.15, label="Real (±1 SD)"
+    )
+    ax.plot(wavelengths, synth_mean, "r-", label="Synthetic (mean)", linewidth=2)
+    ax.fill_between(
+        wavelengths, synth_mean - synth_std, synth_mean + synth_std,
+        color="red", alpha=0.15, label="Synthetic (±1 SD)"
+    )
+    ax.set_xlabel("Wavelength (nm)")
+    ax.set_ylabel("Absorbance (MinMax-scaled)")
+    ax.set_title(title)
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    plt.tight_layout()
+    if save_path:
+        fig.savefig(save_path, dpi=dpi, bbox_inches="tight")
+    if show:
+        plt.show()
+    return fig
+
+
+def plot_pca_comparison(
+    X_real: np.ndarray,
+    X_synth: np.ndarray,
+    save_path: Optional[Union[str, Path]] = None,
+    show: bool = False,
+    figsize: Tuple[int, int] = (12, 10),
+    dpi: int = 100,
+) -> "plt.Figure":
+    """
+    PCA scatter plot (PC1 vs PC2) with confidence ellipses, plus loading curves.
+
+    PCA is fit on the combined (real + synthetic) data standardised together,
+    matching the approach in ``reliability_synthetic_data.py``.
+    """
+    from sklearn.preprocessing import StandardScaler
+
+    combined = np.vstack([X_real, X_synth])
+    scaled = StandardScaler().fit_transform(combined)
+    pca = PCA(n_components=2).fit(scaled)
+    proj = pca.transform(scaled)
+    real_proj = proj[: len(X_real)]
+    synth_proj = proj[len(X_real) :]
+
+    wavelengths = np.arange(200, 730, 2.5)[: X_real.shape[1]]
+
+    fig, axes = plt.subplots(1, 2, figsize=figsize, dpi=dpi)
+
+    # --- Scatter ---
+    ax = axes[0]
+    ax.scatter(real_proj[:, 0], real_proj[:, 1], c="blue", alpha=0.6,
+               label="Real", s=50, edgecolors="none")
+    ax.scatter(synth_proj[:, 0], synth_proj[:, 1], c="red", alpha=0.6,
+               label="Synthetic", s=50, edgecolors="none")
+    _confidence_ellipse(real_proj[:, 0], real_proj[:, 1], ax,
+                        n_std=2.0, edgecolor="blue", linewidth=2)
+    _confidence_ellipse(synth_proj[:, 0], synth_proj[:, 1], ax,
+                        n_std=2.0, edgecolor="red", linewidth=2)
+    ax.set_xlabel(f"PC1 ({pca.explained_variance_ratio_[0]:.1%})")
+    ax.set_ylabel(f"PC2 ({pca.explained_variance_ratio_[1]:.1%})")
+    ax.set_title("PCA Projection")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+
+    # --- Loadings ---
+    ax2 = axes[1]
+    ax2.plot(wavelengths, pca.components_[0], "b-", label="PC1", linewidth=2)
+    ax2.plot(wavelengths, pca.components_[1], "r-", label="PC2", linewidth=2)
+    ax2.set_xlabel("Wavelength (nm)")
+    ax2.set_ylabel("Loading value")
+    ax2.set_title("PCA Loadings (combined)")
+    ax2.legend()
+    ax2.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    if save_path:
+        fig.savefig(save_path, dpi=dpi, bbox_inches="tight")
+    if show:
+        plt.show()
+    return fig
+
+
+def plot_wasserstein_profile(
+    X_real: np.ndarray,
+    X_synth: np.ndarray,
+    wavelengths: Optional[np.ndarray] = None,
+    save_path: Optional[Union[str, Path]] = None,
+    show: bool = False,
+    figsize: Tuple[int, int] = (12, 4),
+    dpi: int = 100,
+) -> "plt.Figure":
+    """
+    Per-wavelength Wasserstein distance between real and synthetic distributions.
+    """
+    from scipy.stats import wasserstein_distance as _wd
+
+    if wavelengths is None:
+        wavelengths = np.arange(200, 730, 2.5)[: X_real.shape[1]]
+
+    wd = np.array([
+        _wd(X_real[:, i], X_synth[:, i]) for i in range(X_real.shape[1])
+    ])
+    mean_wd = float(np.mean(wd))
+
+    fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
+    ax.bar(wavelengths, wd, width=2.0, color="purple", alpha=0.7)
+    ax.axhline(mean_wd, color="red", linewidth=2, label=f"Mean {mean_wd:.4f}")
+    ax.set_xlabel("Wavelength (nm)")
+    ax.set_ylabel("Wasserstein Distance")
+    ax.set_title("Per-wavelength Wasserstein Distance (Real vs Synthetic)")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    plt.tight_layout()
+    if save_path:
+        fig.savefig(save_path, dpi=dpi, bbox_inches="tight")
+    if show:
+        plt.show()
+    return fig
+
+
+def plot_cod_qq(
+    real_y: np.ndarray,
+    synth_y: np.ndarray,
+    log_space: bool = True,
+    save_path: Optional[Union[str, Path]] = None,
+    show: bool = False,
+    figsize: Tuple[int, int] = (6, 6),
+    dpi: int = 100,
+) -> "plt.Figure":
+    """
+    Q-Q plot comparing COD distributions of real and synthetic data.
+
+    Parameters
+    ----------
+    real_y, synth_y : ndarray
+        If ``log_space=True`` (default), values are assumed to be log-COD;
+        if False they are treated as raw COD (mg/L).
+    """
+    from scipy import stats
+
+    q = np.linspace(0.01, 0.99, 100)
+    rq = np.quantile(real_y, q)
+    sq = np.quantile(synth_y, q)
+
+    ks_stat, p_value = stats.ks_2samp(real_y, synth_y)
+    unit = "log(COD)" if log_space else "COD (mg/L)"
+
+    fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
+    ax.scatter(rq, sq, s=40, alpha=0.7, color="purple")
+    lo, hi = min(rq.min(), sq.min()), max(rq.max(), sq.max())
+    ax.plot([lo, hi], [lo, hi], "r--", linewidth=2, label="Identity line")
+    ax.set_xlabel(f"Real {unit} quantiles")
+    ax.set_ylabel(f"Synthetic {unit} quantiles")
+    ax.set_title("Q-Q Plot: COD Distribution")
+    ax.text(
+        0.05, 0.95,
+        f"KS stat: {ks_stat:.4f}\np-value: {p_value:.4f}",
+        transform=ax.transAxes, va="top",
+        bbox=dict(boxstyle="round", facecolor="white", alpha=0.8),
+    )
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    plt.tight_layout()
+    if save_path:
+        fig.savefig(save_path, dpi=dpi, bbox_inches="tight")
+    if show:
+        plt.show()
+    return fig
+
+
+def plot_comparison_results(
+    results_df: "pd.DataFrame",
+    metric_groups: Optional[List[str]] = None,
+    save_path: Optional[Union[str, Path]] = None,
+    show: bool = False,
+    figsize: Tuple[int, int] = (16, 10),
+    dpi: int = 100,
+) -> "plt.Figure":
+    """
+    Bar-chart grid across generators and metrics from ``compare_generators``.
+
+    Parameters
+    ----------
+    results_df : pd.DataFrame
+        Returned by ``uvvislib.generative.evaluation.compare_generators``.
+    metric_groups : list of str, optional
+        Column prefixes to include (e.g. ``["spectral", "pca"]``).
+        Defaults to all numeric columns.
+    """
+    import pandas as pd
+
+    df = results_df.select_dtypes(include=[np.number])
+    if metric_groups is not None:
+        cols = [c for c in df.columns if any(c.startswith(g) for g in metric_groups)]
+        df = df[cols]
+
+    n_metrics = len(df.columns)
+    if n_metrics == 0:
+        raise ValueError("No numeric columns to plot.")
+
+    ncols = 3
+    nrows = math.ceil(n_metrics / ncols)
+
+    fig, axes = plt.subplots(nrows, ncols, figsize=figsize, dpi=dpi)
+    axes = np.array(axes).ravel()
+
+    for i, col in enumerate(df.columns):
+        ax = axes[i]
+        methods = df.index.tolist()
+        values = df[col].tolist()
+        ax.bar(methods, values, color=sns.color_palette("husl", len(methods)))
+        ax.set_title(col, fontsize=9)
+        ax.tick_params(axis="x", rotation=30)
+        ax.grid(True, alpha=0.3, axis="y")
+
+    for j in range(i + 1, len(axes)):
+        axes[j].set_visible(False)
+
+    plt.suptitle("Generator Comparison", fontsize=12)
+    plt.tight_layout()
+    if save_path:
+        fig.savefig(save_path, dpi=dpi, bbox_inches="tight")
+    if show:
+        plt.show()
+    return fig
+
+
+# ---------------------------------------------------------------------------
 # Convenience functions
+# ---------------------------------------------------------------------------
 def plot_spectra(*args, **kwargs):
     """Convenience function for plotting spectra."""
     plotter = Plotter()

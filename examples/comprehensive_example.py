@@ -31,7 +31,7 @@ def main():
     """Main function demonstrating all library functionalities."""
     
     # Setup logging
-    setup_logging(level=logging.INFO)
+    setup_logging(log_level=logging.INFO)
     logger = logging.getLogger(__name__)
     logger.info("Starting comprehensive UV-Vis analysis example")
     
@@ -43,7 +43,7 @@ def main():
         wavelength_start=210,
         wavelength_end=622,
         wavelength_step=2,
-        target_variables=["CONDUCIBILITA'", "pH", "NITRATI"],
+        target_variables=["CONDUCIBILITA'", "pH", "NITRATI", "CLORURI", "SODIO"],
         log_target=False,
         apply_pca=False,
         k_fold_splits=3,
@@ -130,8 +130,11 @@ def main():
                 'predictions': y_pred,
                 'true_values': y_test
             }
-            
-            logger.info(f"{name} - R²: {metrics['r2_score']:.4f}, RMSE: {metrics['rmse']:.4f}")
+
+            logger.info(
+                f"{name} - R²: {np.array2string(metrics['r2_score'], precision=4)}, "
+                f"RMSE: {np.array2string(metrics['rmse'], precision=4)}"
+            )
             
             # Save model
             model_manager.save_model(
@@ -143,23 +146,34 @@ def main():
         logger.info("=== Cross-Validation ===")
         
         # Perform cross-validation on best model
-        best_model_name = max(results.keys(), key=lambda k: results[k]['metrics']['r2_score'])
+        best_model_name = max(
+            results.keys(),
+            key=lambda k: np.mean(results[k]["metrics"]["r2_score"])
+        )
         best_model = results[best_model_name]['model']
         
         cv = DoubleKFoldCV(
             outer_splits=3,
             inner_splits=2,
-            random_state=config.random_state
+            random_state=config.random_state,
+            stratify=False,  # multi-output continuous y is incompatible with StratifiedKFold
         )
-        
-        cv_scores = cv.cross_validate(
-            best_model, X, y,
-            scoring_functions={'r2': r2_score, 'rmse': rmse}
-        )
-        
-        logger.info(f"Cross-validation results for {best_model_name}:")
-        logger.info(f"R²: {cv_scores['r2']['mean']:.4f} ± {cv_scores['r2']['std']:.4f}")
-        logger.info(f"RMSE: {cv_scores['rmse']['mean']:.4f} ± {cv_scores['rmse']['std']:.4f}")
+
+        rf_param_grid = {
+            'n_estimators': [20, 50],
+            'max_depth': [None, 5],
+            'min_samples_split': [2, 5],
+            'max_features': ['sqrt', 'log2'],
+        }
+        # DoubleKFoldCV uses RandomizedSearchCV and requires a sklearn-compatible estimator
+        rf_estimator = results['RandomForest']['model'].model
+        cv_scores = cv.fit(X, y, rf_estimator, rf_param_grid, n_iter=5)
+
+        logger.info("Cross-validation results for RandomForest:")
+        test_r2 = np.array([np.mean(s['r2_score']) for s in cv_scores['test_scores']])
+        test_rmse = np.array([np.mean(s['rmse']) for s in cv_scores['test_scores']])
+        logger.info(f"R²: {np.mean(test_r2):.4f} ± {np.std(test_r2):.4f}")
+        logger.info(f"RMSE: {np.mean(test_rmse):.4f} ± {np.std(test_rmse):.4f}")
         
         # 4. CLUSTERING ANALYSIS
         logger.info("=== Clustering Analysis ===")
@@ -213,19 +227,21 @@ def main():
                 )
                 experiment_manager.save_plot(fig, "random_forest_feature_importance.png")
         
-        # Plot clustering results
+        # Plot clustering results (Plotter has no clustering scatter method; use matplotlib directly)
         cluster_labels = clusterer.get_cluster_labels()
         if cluster_labels is not None:
-            # Use PCA for 2D visualization
+            import matplotlib.pyplot as plt
             from sklearn.decomposition import PCA
             pca = PCA(n_components=2)
             X_pca = pca.fit_transform(X)
-            
-            fig = plotter.plot_clustering_results(
-                X_pca, cluster_labels,
-                title="Spectral Data Clustering Results"
-            )
+            fig, ax = plt.subplots(figsize=(8, 6))
+            scatter = ax.scatter(X_pca[:, 0], X_pca[:, 1], c=cluster_labels, cmap='viridis', alpha=0.7)
+            plt.colorbar(scatter, ax=ax, label='Cluster')
+            ax.set_xlabel('PC1'); ax.set_ylabel('PC2')
+            ax.set_title('Spectral Data Clustering Results')
+            plt.tight_layout()
             experiment_manager.save_plot(fig, "clustering_results.png")
+            plt.close(fig)
         
         # 6. SAVE RESULTS
         logger.info("=== Saving Results ===")
@@ -262,7 +278,7 @@ def main():
         logger.info("=== Analysis Summary ===")
         logger.info(f"Experiment ID: {experiment_id}")
         logger.info(f"Best model: {best_model_name}")
-        logger.info(f"Best R² score: {results[best_model_name]['metrics']['r2_score']:.4f}")
+        logger.info(f"Best R² score: {np.mean(results[best_model_name]['metrics']['r2_score']):.4f}")
         logger.info(f"Number of clusters found: {cluster_stats['n_clusters']}")
         logger.info(f"Clustering silhouette score: {cluster_stats['silhouette_score']:.4f}")
         

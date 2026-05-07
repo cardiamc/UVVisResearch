@@ -8,7 +8,7 @@ preprocessed data, and analysis results.
 import json
 import pickle
 from pathlib import Path
-from typing import Dict, Any, Optional, Union, Tuple
+from typing import Dict, Any, List, Optional, Union, Tuple
 import logging
 import pandas as pd
 import numpy as np

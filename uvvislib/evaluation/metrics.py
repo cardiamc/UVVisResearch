@@ -8,7 +8,7 @@ including R2 score, MAPE, RMSE, and other statistical measures.
 import numpy as np
 import scipy.stats
 from typing import Union, Tuple, Optional
-from sklearn.metrics import mean_squared_error, r2_score as sklearn_r2_score
+from sklearn.metrics import mean_squared_error, r2_score as sklearn_r2_score, root_mean_squared_error
 
 
 def r2_score(x: np.ndarray, y: np.ndarray) -> Union[float, np.ndarray]:
@@ -143,7 +143,7 @@ def rmse(y_true: np.ndarray, y_pred: np.ndarray,
         >>> rmse([1, 2, 3], [1.1, 1.9, 3.1])
         0.1414213562373095
     """
-    return mean_squared_error(y_true, y_pred, squared=squared, multioutput=multioutput)
+    return root_mean_squared_error(y_true, y_pred, multioutput=multioutput)
 
 
 def rmse_exp(y_true: np.ndarray, y_pred: np.ndarray, 
@@ -213,14 +213,14 @@ def compute_evaluation(y_true: np.ndarray, y_pred: np.ndarray,
     
     try:
         if log_target:
-            evaluation_results["RMSE"] = rmse_exp(y_true, y_pred, multioutput='raw_values')
+            evaluation_results["rmse"] = rmse_exp(y_true, y_pred, multioutput='raw_values')
         else:
-            evaluation_results["RMSE"] = rmse(y_true, y_pred, multioutput='raw_values')
+            evaluation_results["rmse"] = rmse(y_true, y_pred, multioutput='raw_values')
     except:
-        evaluation_results["RMSE"] = float('inf')
+        evaluation_results["rmse"] = float('inf')
     
     evaluation_results["logRMSE"] = rmse(y_true, y_pred, multioutput='raw_values')
-    evaluation_results["R2"] = r2_score(y_true, y_pred)
+    evaluation_results["r2_score"] = r2_score(y_true, y_pred)
     evaluation_results["MAPE"] = mape(y_true, y_pred)
     
     return evaluation_results
