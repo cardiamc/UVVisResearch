@@ -54,7 +54,7 @@ class DataLoader:
         self.logger.info(f"Loading UV-Vis data from: {filepath}")
         
         try:
-            self.uv_vis_data = pd.read_csv(filepath)
+            self.uv_vis_data = pd.read_csv(filepath, sep=";", decimal=",")
             self.logger.info(f"UV-Vis data loaded: {self.uv_vis_data.shape}")
             return self.uv_vis_data
         except FileNotFoundError:
@@ -80,7 +80,7 @@ class DataLoader:
         self.logger.info(f"Loading chemical data from: {filepath}")
         
         try:
-            self.chemical_data = pd.read_csv(filepath)
+            self.chemical_data = pd.read_csv(filepath, sep=";", decimal=",")
             self.logger.info(f"Chemical data loaded: {self.chemical_data.shape}")
             return self.chemical_data
         except FileNotFoundError:

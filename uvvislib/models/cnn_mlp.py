@@ -440,7 +440,8 @@ class CNNMLPRegressor(BaseModel):
         with torch.no_grad():
             predictions = self.model(X_tensor)
         
-        return predictions.cpu().numpy()
+        # Bypass PyTorch-NumPy bridge which breaks with NumPy 2.x
+        return np.array(predictions.cpu().tolist())
     
     def get_feature_importance(
         self,
@@ -478,8 +479,8 @@ class CNNMLPRegressor(BaseModel):
             self.model.zero_grad()
             output[:, i].backward(torch.ones_like(output[:, i]), retain_graph=True)
 
-            grad_abs = X_tensor.grad[:, :self.n_abs].abs().mean(dim=0).cpu().numpy()
-            grad_extr = X_tensor.grad[:, self.n_abs:].abs().mean(dim=0).cpu().numpy()
+            grad_abs = np.array(X_tensor.grad[:, :self.n_abs].abs().mean(dim=0).cpu().tolist())
+            grad_extr = np.array(X_tensor.grad[:, self.n_abs:].abs().mean(dim=0).cpu().tolist())
 
             importance_abs.append(grad_abs)
             importance_extr.append(grad_extr)

@@ -73,7 +73,16 @@ class Preprocessor:
         # Store original data
         self.features_df = features_df.copy()
         self.targets_df = targets_df.copy()
-        
+
+        # Coerce all target columns to numeric (strips whitespace and handles comma decimals
+        # in columns that pandas couldn't auto-convert at read time, e.g. due to blank cells)
+        for col in targets_df.columns:
+            if targets_df[col].dtype == object:
+                targets_df[col] = pd.to_numeric(
+                    targets_df[col].astype(str).str.strip().str.replace(',', '.', regex=False),
+                    errors='coerce'
+                )
+
         # Remove rows with NaN targets
         if remove_nan_targets:
             initial_rows = len(targets_df)

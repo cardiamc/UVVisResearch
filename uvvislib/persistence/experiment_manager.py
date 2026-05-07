@@ -198,10 +198,11 @@ class ExperimentManager:
         if target_names is None:
             target_names = [f"target_{i}" for i in range(predictions.shape[1])]
         
-        df = pd.DataFrame()
+        cols = {}
         for i, name in enumerate(target_names):
-            df[f"{name}_pred"] = predictions[:, i]
-            df[f"{name}_true"] = true_values[:, i]
+            cols[f"{name}_pred"] = predictions[:, i]
+            cols[f"{name}_true"] = true_values[:, i]
+        df = pd.DataFrame(cols)
         
         df.to_csv(predictions_path, index=False)
         

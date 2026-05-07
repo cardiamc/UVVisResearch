@@ -355,8 +355,8 @@ class CNNRegressor(BaseModel):
         with torch.no_grad():
             predictions = self.model(X_tensor)
         
-        # Convert to numpy
-        predictions = predictions.cpu().numpy()
+        # Convert to numpy (bypass PyTorch-NumPy bridge which breaks with NumPy 2.x)
+        predictions = np.array(predictions.cpu().tolist())
         
         # Reshape if single target
         if self.n_targets == 1:
@@ -375,7 +375,7 @@ class CNNRegressor(BaseModel):
             return None
         
         # Use L1 norm of first conv layer weights as feature importance
-        weights = self.model.conv1.weight.data.cpu().numpy()
+        weights = np.array(self.model.conv1.weight.data.cpu().tolist())
         # Average across channels and kernel positions
         importance = np.mean(np.abs(weights), axis=(0, 2))
         
