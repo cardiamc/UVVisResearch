@@ -138,8 +138,13 @@ class DoubleKFoldCV:
             
             # Evaluate on test set
             test_pred = final_model.predict(X_test)
+            # Normalize to 2D so vstack and save_predictions work for single target
+            if test_pred.ndim == 1:
+                test_pred = test_pred.reshape(-1, 1)
+            if y_test.ndim == 1:
+                y_test = y_test.reshape(-1, 1)
             test_score = compute_evaluation(y_test, test_pred, log_target)
-            
+
             # Store results
             results['test_scores'].append(test_score)
             results['train_scores'].append(inner_scores['train'])

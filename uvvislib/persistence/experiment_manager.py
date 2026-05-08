@@ -193,7 +193,12 @@ class ExperimentManager:
             raise ValueError("No active experiment. Call start_experiment() first.")
         
         predictions_path = self.current_experiment_path / "results" / filename
-        
+
+        if predictions.ndim == 1:
+            predictions = predictions.reshape(-1, 1)
+        if true_values.ndim == 1:
+            true_values = true_values.reshape(-1, 1)
+
         # Create DataFrame
         if target_names is None:
             target_names = [f"target_{i}" for i in range(predictions.shape[1])]

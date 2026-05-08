@@ -30,8 +30,8 @@ def r2_score(x: np.ndarray, y: np.ndarray) -> Union[float, np.ndarray]:
         0.9999999999999999
     """
     dim = 1 if len(x.shape) == 1 else x.shape[1]
-    
-    if dim > 1:
+
+    if len(x.shape) > 1:
         r2 = []
         for i in range(dim):
             try:
@@ -209,8 +209,16 @@ def compute_evaluation(y_true: np.ndarray, y_pred: np.ndarray,
         >>> metrics['RMSE']
         0.1414213562373095
     """
+    # Normalize to 2D so all metrics behave consistently for 1 or N targets.
+    y_true = np.array(y_true)
+    y_pred = np.array(y_pred)
+    if y_true.ndim == 1:
+        y_true = y_true.reshape(-1, 1)
+    if y_pred.ndim == 1:
+        y_pred = y_pred.reshape(-1, 1)
+
     evaluation_results = {}
-    
+
     try:
         if log_target:
             evaluation_results["rmse"] = rmse_exp(y_true, y_pred, multioutput='raw_values')
@@ -218,7 +226,7 @@ def compute_evaluation(y_true: np.ndarray, y_pred: np.ndarray,
             evaluation_results["rmse"] = rmse(y_true, y_pred, multioutput='raw_values')
     except:
         evaluation_results["rmse"] = float('inf')
-    
+
     evaluation_results["logRMSE"] = rmse(y_true, y_pred, multioutput='raw_values')
     evaluation_results["r2_score"] = r2_score(y_true, y_pred)
     evaluation_results["MAPE"] = mape(y_true, y_pred)
