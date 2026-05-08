@@ -209,8 +209,109 @@ class ExperimentManager:
         self.logger.info(f"Predictions saved to: {predictions_path}")
         return str(predictions_path)
     
+    def save_cv_results_csv(
+        self,
+        cv_scores: Dict[str, Any],
+        target_names: Optional[List[str]] = None,
+        filename: str = "cv_results.csv"
+    ) -> str:
+        """
+        Save per-target cross-validation metrics to a CSV file.
+
+        Computes mean and std of R² (and RMSE) across outer folds for every
+        target variable and writes one row per target.
+
+        Args:
+            cv_scores: Dict returned by ``DoubleKFoldCV.fit`` — must contain
+                ``'test_scores'``, a list of per-fold dicts with ``'r2_score'``
+                and ``'rmse'`` arrays of shape ``(n_targets,)``.
+            target_names: Names of the target variables. If None, uses
+                ``'target_0'``, ``'target_1'``, …
+            filename: Output CSV file name (saved inside ``results/``).
+
+        Returns:
+            Absolute path to the saved CSV file.
+        """
+        if self.current_experiment_path is None:
+            raise ValueError("No active experiment. Call start_experiment() first.")
+
+        test_scores = cv_scores.get("test_scores", [])
+        if not test_scores:
+            raise ValueError("cv_scores['test_scores'] is empty.")
+
+        # Stack per-fold arrays → shape (n_folds, n_targets)
+        r2_matrix = np.array([np.atleast_1d(s["r2_score"]) for s in test_scores])
+        rmse_matrix = np.array([np.atleast_1d(s["rmse"]) for s in test_scores])
+
+        n_targets = r2_matrix.shape[1]
+        if target_names is None:
+            target_names = [f"target_{i}" for i in range(n_targets)]
+        target_names = list(target_names)[:n_targets]
+
+        df = pd.DataFrame({
+            "target":    target_names,
+            "r2_mean":   r2_matrix.mean(axis=0),
+            "r2_std":    r2_matrix.std(axis=0),
+            "rmse_mean": rmse_matrix.mean(axis=0),
+            "rmse_std":  rmse_matrix.std(axis=0),
+        })
+        df = df.sort_values("r2_mean", ascending=False).reset_index(drop=True)
+
+        out_path = self.current_experiment_path / "results" / filename
+        df.to_csv(out_path, index=False, float_format="%.6f")
+
+        self.logger.info(f"CV results saved to: {out_path}")
+        return str(out_path)
+
+    def save_evaluation_csv(
+        self,
+        metrics: Dict[str, Any],
+        target_names: Optional[List[str]] = None,
+        filename: str = "evaluation.csv"
+    ) -> str:
+        """
+        Save per-target evaluation metrics from ``compute_evaluation`` to a CSV.
+
+        Args:
+            metrics: Dict returned by ``compute_evaluation`` — expected keys are
+                ``'r2_score'``, ``'rmse'``, and optionally ``'MAPE'``, each an
+                array of shape ``(n_targets,)``.
+            target_names: Names of the target variables. If None, uses
+                ``'target_0'``, ``'target_1'``, …
+            filename: Output CSV file name (saved inside ``results/``).
+
+        Returns:
+            Absolute path to the saved CSV file.
+        """
+        if self.current_experiment_path is None:
+            raise ValueError("No active experiment. Call start_experiment() first.")
+
+        r2 = np.atleast_1d(metrics["r2_score"])
+        rmse_vals = np.atleast_1d(metrics["rmse"])
+        n_targets = len(r2)
+
+        if target_names is None:
+            target_names = [f"target_{i}" for i in range(n_targets)]
+        target_names = list(target_names)[:n_targets]
+
+        row: Dict[str, Any] = {
+            "target":  target_names,
+            "r2":      r2,
+            "rmse":    rmse_vals,
+        }
+        if "MAPE" in metrics:
+            row["mape"] = np.atleast_1d(metrics["MAPE"])
+
+        df = pd.DataFrame(row).sort_values("r2", ascending=False).reset_index(drop=True)
+
+        out_path = self.current_experiment_path / "results" / filename
+        df.to_csv(out_path, index=False, float_format="%.6f")
+
+        self.logger.info(f"Evaluation results saved to: {out_path}")
+        return str(out_path)
+
     def save_plot(
-        self, 
+        self,
         figure,
         filename: str,
         dpi: int = 300

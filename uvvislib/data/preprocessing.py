@@ -74,10 +74,11 @@ class Preprocessor:
         self.features_df = features_df.copy()
         self.targets_df = targets_df.copy()
 
-        # Coerce all target columns to numeric (strips whitespace and handles comma decimals
-        # in columns that pandas couldn't auto-convert at read time, e.g. due to blank cells)
+        # Coerce all non-numeric target columns to float.
+        # Handles: pandas object dtype (old-style), pandas 3.x StringDtype, and
+        # values with comma decimal separators or leading/trailing whitespace.
         for col in targets_df.columns:
-            if targets_df[col].dtype == object:
+            if not pd.api.types.is_numeric_dtype(targets_df[col]):
                 targets_df[col] = pd.to_numeric(
                     targets_df[col].astype(str).str.strip().str.replace(',', '.', regex=False),
                     errors='coerce'

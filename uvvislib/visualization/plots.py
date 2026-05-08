@@ -212,69 +212,75 @@ class Plotter:
         y_pred: np.ndarray,
         target_names: Optional[List[str]] = None,
         title: str = "Prediction vs Actual",
+        ncols: int = 4,
         figsize: Optional[Tuple[int, int]] = None,
         save_path: Optional[Union[str, Path]] = None,
         show: bool = True
     ) -> plt.Figure:
         """
-        Plot predicted vs actual values.
-        
+        Plot predicted vs actual values arranged in a grid of subplots.
+
         Args:
             y_true: True values
             y_pred: Predicted values
             target_names: Names of targets
             title: Plot title
-            figsize: Figure size
+            ncols: Number of subplot columns (rows are computed automatically)
+            figsize: Figure size; auto-computed from ncols/nrows if None
             save_path: Path to save figure
             show: Whether to display the plot
-            
+
         Returns:
             Matplotlib figure
         """
+        from ..evaluation.metrics import r2_score_single
+
         if y_true.ndim == 1:
             y_true = y_true.reshape(-1, 1)
         if y_pred.ndim == 1:
             y_pred = y_pred.reshape(-1, 1)
-        
+
         n_targets = y_true.shape[1]
-        
+        ncols = min(ncols, n_targets)
+        nrows = math.ceil(n_targets / ncols)
+
         if figsize is None:
-            figsize = (5 * n_targets, 5)
-        
-        fig, axes = plt.subplots(1, n_targets, figsize=figsize, dpi=self.dpi)
-        if n_targets == 1:
-            axes = [axes]
-        
+            figsize = (5 * ncols, 4 * nrows)
+
+        fig, axes = plt.subplots(nrows, ncols, figsize=figsize, dpi=self.dpi,
+                                 squeeze=False)
+        axes_flat = axes.ravel()
+
         for i in range(n_targets):
-            ax = axes[i]
-            
-            # Plot points
-            ax.scatter(y_true[:, i], y_pred[:, i], alpha=0.6, color=self.colors[i])
-            
-            # Plot diagonal line
-            min_val = min(y_true[:, i].min(), y_pred[:, i].min())
-            max_val = max(y_true[:, i].max(), y_pred[:, i].max())
-            ax.plot([min_val, max_val], [min_val, max_val], 'r--', alpha=0.8)
-            
-            # Calculate R²
-            from ..evaluation.metrics import r2_score_single
+            ax = axes_flat[i]
+            color = self.colors[i % len(self.colors)]
+
+            ax.scatter(y_true[:, i], y_pred[:, i], alpha=0.6, color=color, s=20)
+
+            lo = min(float(y_true[:, i].min()), float(y_pred[:, i].min()))
+            hi = max(float(y_true[:, i].max()), float(y_pred[:, i].max()))
+            ax.plot([lo, hi], [lo, hi], 'r--', alpha=0.8, linewidth=1)
+
             r2 = r2_score_single(y_pred[:, i], y_true[:, i])
-            
-            target_name = target_names[i] if target_names and i < len(target_names) else f'Target {i+1}'
-            ax.set_xlabel(f'Actual {target_name}')
-            ax.set_ylabel(f'Predicted {target_name}')
-            ax.set_title(f'{target_name} (R² = {r2:.3f})')
+            name = target_names[i] if target_names and i < len(target_names) else f'Target {i+1}'
+            ax.set_xlabel('Actual', fontsize=8)
+            ax.set_ylabel('Predicted', fontsize=8)
+            ax.set_title(f'{name}\nR² = {r2:.3f}', fontsize=8)
+            ax.tick_params(labelsize=7)
             ax.grid(True, alpha=0.3)
-        
-        plt.suptitle(title)
+
+        for j in range(n_targets, len(axes_flat)):
+            axes_flat[j].set_visible(False)
+
+        fig.suptitle(title, fontsize=11, y=1.01)
         plt.tight_layout()
-        
+
         if save_path:
             fig.savefig(save_path, dpi=self.dpi, bbox_inches='tight')
-        
+
         if show:
             plt.show()
-        
+
         return fig
     
     def plot_feature_importance(
@@ -283,72 +289,80 @@ class Plotter:
         importance_scores: np.ndarray,
         target_names: Optional[List[str]] = None,
         title: str = "Feature Importance",
+        ncols: int = 3,
         figsize: Optional[Tuple[int, int]] = None,
         save_path: Optional[Union[str, Path]] = None,
         show: bool = True,
-        top_n: Optional[int] = None
+        top_n: Optional[int] = 20
     ) -> plt.Figure:
         """
-        Plot feature importance.
-        
+        Plot feature importance in a grid of horizontal bar charts.
+
         Args:
             feature_names: Names of features
             importance_scores: Importance scores (n_targets, n_features)
             target_names: Names of targets
             title: Plot title
-            figsize: Figure size
+            ncols: Subplot columns (rows computed automatically)
+            figsize: Figure size; auto-computed if None
             save_path: Path to save figure
             show: Whether to display the plot
-            top_n: Number of top features to show
-            
+            top_n: Number of top features to show per target (default 20)
+
         Returns:
             Matplotlib figure
         """
         if importance_scores.ndim == 1:
             importance_scores = importance_scores.reshape(1, -1)
-        
-        n_targets, n_features = importance_scores.shape
-        
+
+        n_targets = importance_scores.shape[0]
+        ncols = min(ncols, n_targets)
+        nrows = math.ceil(n_targets / ncols)
+
+        bar_height = max(top_n or 10, 8)
         if figsize is None:
-            figsize = (12, 6 * n_targets)
-        
-        fig, axes = plt.subplots(n_targets, 1, figsize=figsize, dpi=self.dpi)
-        if n_targets == 1:
-            axes = [axes]
-        
+            figsize = (7 * ncols, 0.35 * bar_height * nrows + 1)
+
+        fig, axes = plt.subplots(nrows, ncols, figsize=figsize, dpi=self.dpi,
+                                 squeeze=False)
+        axes_flat = axes.ravel()
+
         for i in range(n_targets):
-            ax = axes[i]
-            
-            # Sort features by importance
-            sorted_indices = np.argsort(importance_scores[i])[::-1]
-            sorted_scores = importance_scores[i][sorted_indices]
-            sorted_names = [feature_names[j] for j in sorted_indices]
-            
-            # Select top N features if specified
+            ax = axes_flat[i]
+
+            sorted_idx = np.argsort(importance_scores[i])[::-1]
+            scores = importance_scores[i][sorted_idx]
+            names = [feature_names[j] for j in sorted_idx]
+
             if top_n is not None:
-                sorted_scores = sorted_scores[:top_n]
-                sorted_names = sorted_names[:top_n]
-            
-            # Create horizontal bar plot
-            y_pos = np.arange(len(sorted_scores))
-            ax.barh(y_pos, sorted_scores, color=self.colors[i])
+                scores = scores[:top_n]
+                names = names[:top_n]
+
+            # Reverse so highest bar is at top
+            y_pos = np.arange(len(scores))
+            ax.barh(y_pos, scores[::-1], color=self.colors[i % len(self.colors)],
+                    height=0.7)
             ax.set_yticks(y_pos)
-            ax.set_yticklabels(sorted_names)
-            ax.set_xlabel('Importance Score')
-            
-            target_name = target_names[i] if target_names and i < len(target_names) else f'Target {i+1}'
-            ax.set_title(f'{target_name} - Feature Importance')
+            ax.set_yticklabels(names[::-1], fontsize=7)
+            ax.set_xlabel('Importance Score', fontsize=8)
+            ax.tick_params(axis='x', labelsize=7)
+
+            name = target_names[i] if target_names and i < len(target_names) else f'Target {i+1}'
+            ax.set_title(name, fontsize=9)
             ax.grid(True, alpha=0.3, axis='x')
-        
-        plt.suptitle(title)
+
+        for j in range(n_targets, len(axes_flat)):
+            axes_flat[j].set_visible(False)
+
+        fig.suptitle(title, fontsize=11, y=1.01)
         plt.tight_layout()
-        
+
         if save_path:
             fig.savefig(save_path, dpi=self.dpi, bbox_inches='tight')
-        
+
         if show:
             plt.show()
-        
+
         return fig
     
     def plot_training_history(
@@ -525,71 +539,76 @@ class Plotter:
         importance_scores: np.ndarray,
         target_names: Optional[List[str]] = None,
         title: str = "Spectral Feature Importance",
+        ncols: int = 2,
         figsize: Optional[Tuple[int, int]] = None,
         save_path: Optional[Union[str, Path]] = None,
         show: bool = True,
         threshold: Optional[float] = None
     ) -> plt.Figure:
         """
-        Plot feature importance for spectral data.
-        
+        Plot spectral feature importance in a grid.
+
         Args:
             wavelengths: Wavelength values
             importance_scores: Importance scores (n_targets, n_wavelengths)
             target_names: Names of targets
             title: Plot title
-            figsize: Figure size
+            ncols: Subplot columns (rows computed automatically)
+            figsize: Figure size; auto-computed if None
             save_path: Path to save figure
             show: Whether to display the plot
-            threshold: Threshold for highlighting important features
-            
+            threshold: Optional threshold — wavelengths above it are highlighted
+
         Returns:
             Matplotlib figure
         """
         if importance_scores.ndim == 1:
             importance_scores = importance_scores.reshape(1, -1)
-        
+
         n_targets = importance_scores.shape[0]
-        
+        ncols = min(ncols, n_targets)
+        nrows = math.ceil(n_targets / ncols)
+
         if figsize is None:
-            figsize = (12, 4 * n_targets)
-        
-        fig, axes = plt.subplots(n_targets, 1, figsize=figsize, dpi=self.dpi)
-        if n_targets == 1:
-            axes = [axes]
-        
+            figsize = (8 * ncols, 3.5 * nrows)
+
+        fig, axes = plt.subplots(nrows, ncols, figsize=figsize, dpi=self.dpi,
+                                 squeeze=False)
+        axes_flat = axes.ravel()
+
         for i in range(n_targets):
-            ax = axes[i]
-            
-            # Plot importance scores
-            ax.plot(wavelengths, importance_scores[i], 
-                   color=self.colors[i], linewidth=2)
-            
-            # Highlight important features if threshold is provided
+            ax = axes_flat[i]
+            color = self.colors[i % len(self.colors)]
+
+            ax.plot(wavelengths, importance_scores[i], color=color, linewidth=1.5)
+
             if threshold is not None:
-                important_mask = importance_scores[i] > threshold
-                ax.scatter(wavelengths[important_mask], 
-                          importance_scores[i][important_mask],
-                          color='red', s=50, alpha=0.7, 
-                          label=f'Important (> {threshold})')
-                ax.legend()
-            
-            ax.set_xlabel('Wavelength (nm)')
-            ax.set_ylabel('Importance Score')
-            
-            target_name = target_names[i] if target_names and i < len(target_names) else f'Target {i+1}'
-            ax.set_title(f'{target_name} - Spectral Feature Importance')
+                mask = importance_scores[i] > threshold
+                ax.scatter(wavelengths[mask], importance_scores[i][mask],
+                           color='red', s=30, alpha=0.8,
+                           label=f'> {threshold:.3g}', zorder=3)
+                ax.legend(fontsize=7)
+
+            ax.set_xlabel('Wavelength (nm)', fontsize=8)
+            ax.set_ylabel('Importance', fontsize=8)
+            ax.tick_params(labelsize=7)
+
+            name = target_names[i] if target_names and i < len(target_names) else f'Target {i+1}'
+            ax.set_title(name, fontsize=9)
             ax.grid(True, alpha=0.3)
-        
-        plt.suptitle(title)
+
+        for j in range(n_targets, len(axes_flat)):
+            axes_flat[j].set_visible(False)
+
+        fig.suptitle(title, fontsize=11, y=1.01)
         plt.tight_layout()
-        
+
         if save_path:
             fig.savefig(save_path, dpi=self.dpi, bbox_inches='tight')
-        
+
         if show:
             plt.show()
-        
+
         return fig
     
     def plot_model_comparison(
@@ -658,22 +677,27 @@ class Plotter:
         y_pred: np.ndarray,
         target_names: Optional[List[str]] = None,
         title: str = "Residual Analysis",
+        targets_per_row: int = 2,
         figsize: Optional[Tuple[int, int]] = None,
         save_path: Optional[Union[str, Path]] = None,
         show: bool = True
     ) -> plt.Figure:
         """
-        Plot residual analysis.
-        
+        Plot residual analysis in a compact grid.
+
+        Each target occupies two adjacent panels (scatter + histogram).
+        ``targets_per_row`` controls how many targets share a single row.
+
         Args:
             y_true: True values
             y_pred: Predicted values
             target_names: Names of targets
             title: Plot title
-            figsize: Figure size
+            targets_per_row: Number of targets displayed side-by-side per row
+            figsize: Figure size; auto-computed if None
             save_path: Path to save figure
             show: Whether to display the plot
-            
+
         Returns:
             Matplotlib figure
         """
@@ -681,46 +705,64 @@ class Plotter:
             y_true = y_true.reshape(-1, 1)
         if y_pred.ndim == 1:
             y_pred = y_pred.reshape(-1, 1)
-        
+
         n_targets = y_true.shape[1]
         residuals = y_true - y_pred
-        
+
+        # Layout: each target → 2 panels; targets_per_row targets share one row
+        ncols = targets_per_row * 2
+        nrows = math.ceil(n_targets / targets_per_row)
+
         if figsize is None:
-            figsize = (15, 5 * n_targets)
-        
-        fig, axes = plt.subplots(n_targets, 2, figsize=figsize, dpi=self.dpi)
-        if n_targets == 1:
-            axes = axes.reshape(1, -1)
-        
+            figsize = (6 * targets_per_row * 2, 4 * nrows)
+
+        fig, axes = plt.subplots(nrows, ncols, figsize=figsize, dpi=self.dpi,
+                                 squeeze=False)
+
         for i in range(n_targets):
-            # Residuals vs Predicted
-            axes[i, 0].scatter(y_pred[:, i], residuals[:, i], alpha=0.6)
-            axes[i, 0].axhline(y=0, color='r', linestyle='--', alpha=0.8)
-            axes[i, 0].set_xlabel('Predicted Values')
-            axes[i, 0].set_ylabel('Residuals')
-            axes[i, 0].set_title(f'Residuals vs Predicted')
-            axes[i, 0].grid(True, alpha=0.3)
-            
-            # Residuals histogram
-            axes[i, 1].hist(residuals[:, i], bins=20, alpha=0.7, edgecolor='black')
-            axes[i, 1].set_xlabel('Residuals')
-            axes[i, 1].set_ylabel('Frequency')
-            axes[i, 1].set_title(f'Residuals Distribution')
-            axes[i, 1].grid(True, alpha=0.3)
-            
-            target_name = target_names[i] if target_names and i < len(target_names) else f'Target {i+1}'
-            axes[i, 0].set_title(f'{target_name} - Residuals vs Predicted')
-            axes[i, 1].set_title(f'{target_name} - Residuals Distribution')
-        
-        plt.suptitle(title)
+            row = i // targets_per_row
+            col_base = (i % targets_per_row) * 2
+            ax_scatter = axes[row, col_base]
+            ax_hist = axes[row, col_base + 1]
+
+            name = target_names[i] if target_names and i < len(target_names) else f'Target {i+1}'
+            color = self.colors[i % len(self.colors)]
+
+            # Scatter: residuals vs predicted
+            ax_scatter.scatter(y_pred[:, i], residuals[:, i], alpha=0.6,
+                               color=color, s=20)
+            ax_scatter.axhline(0, color='r', linestyle='--', alpha=0.8)
+            ax_scatter.set_xlabel('Predicted', fontsize=8)
+            ax_scatter.set_ylabel('Residuals', fontsize=8)
+            ax_scatter.set_title(f'{name}\nResiduals vs Predicted', fontsize=8)
+            ax_scatter.tick_params(labelsize=7)
+            ax_scatter.grid(True, alpha=0.3)
+
+            # Histogram
+            ax_hist.hist(residuals[:, i], bins=20, alpha=0.7, edgecolor='black',
+                         color=color)
+            ax_hist.set_xlabel('Residuals', fontsize=8)
+            ax_hist.set_ylabel('Count', fontsize=8)
+            ax_hist.set_title(f'{name}\nResiduals Distribution', fontsize=8)
+            ax_hist.tick_params(labelsize=7)
+            ax_hist.grid(True, alpha=0.3)
+
+        # Hide unused axes
+        used = n_targets * 2
+        total = nrows * ncols
+        flat = axes.ravel()
+        for j in range(used, total):
+            flat[j].set_visible(False)
+
+        fig.suptitle(title, fontsize=11, y=1.01)
         plt.tight_layout()
-        
+
         if save_path:
             fig.savefig(save_path, dpi=self.dpi, bbox_inches='tight')
-        
+
         if show:
             plt.show()
-        
+
         return fig
 
 

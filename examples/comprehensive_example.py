@@ -38,15 +38,30 @@ def main():
     # Initialize configuration
     config = Config(
         data_path="./Data/",
-        uv_vis_data_file="abs_spectra_100mm.csv",
-        chemical_data_file="Full_chemical_analysis.csv",
+        uv_vis_data_file="Abs_100mm_completo_ARCHA.csv",
+        chemical_data_file="Analisi_chimiche_complete_ARCHA.csv",
         wavelength_start=210,
         wavelength_end=622,
         wavelength_step=2,
-        target_variables=["CONDUCIBILITA'", "pH", "NITRATI", "CLORURI", "SODIO"],
+        target_variables=["CONDUCIBILITA'", "POTENZIALE REDOX", "NITRITI", "NITRATI", "FLUORURI", "SODIO", "CALCIO",
+                   "MAGNESIO", "SOLFATI", "CLORURI", "DUREZZA (da calcolo)", "pH",
+                   "AMMONIO", "CLORATI", "ARSENICO", "ANTIMONIO",
+                   "ALLUMINIO", "CADMIO", "CROMO TOTALE", "FERRO", "MANGANESE", "NICHEL", "PIOMBO",
+                   "RAME", "SELENIO", "MERCURIO", "BORO", "BROMODICLOROMETANO", "BROMOFORMIO",
+                   "CLOROFORMIO", "cis-1,2-DICLOROETILENE", "DIBROMOCLOROMETANO", "TETRACLOROETILENE",
+                #    "trans-1,2-DICLOROETILENE", 
+                   "TRICLOROETILENE", "1,1-DICLOROETANO", "1,1-DICLOROETILENE",
+                   "1,1,1-TRICLOROETANO", "1,2-DIBROMOETANO", "1,2-DICLOROETANO",
+                   "1,2-DICLOROPROPANO", "ESACLOROBUTADIENE",
+                   "CLORURO DI VINILE", "METILTERZIARBUTILETERE (MTBE)",
+                   "RESIDUO FISSO A 180°C", "1,2,4-TRICLOROBENZENE", "1,2,3-TRICLOROBENZENE",
+                   "1,3-DICLOROBENZENE",
+                   "1,3,5-TRIMETILBENZENE", "n-PROPILBENZENE",
+                   "iso-PROPILBENZENE", "STIRENE", "o-XILENE", "(m+p)-XILENE", "ETILBENZENE", "TOLUENE",
+                   "CLORITI", "TOC", "CONTA DI MICRORGANISMI VITALI A 36°C", "CONTA DI MICRORGANISMI VITALI A 22°C"],
         log_target=False,
         apply_pca=False,
-        k_fold_splits=3,
+        k_fold_splits=5,
         random_state=42
     )
     
@@ -135,7 +150,14 @@ def main():
                 f"{name} - R²: {np.array2string(metrics['r2_score'], precision=4)}, "
                 f"RMSE: {np.array2string(metrics['rmse'], precision=4)}"
             )
-            
+
+            # Save per-target evaluation metrics to CSV
+            experiment_manager.save_evaluation_csv(
+                metrics,
+                target_names=targets_df.columns.tolist(),
+                filename=f"{name.lower()}_evaluation.csv"
+            )
+
             # Save model
             model_manager.save_model(
                 model, f"{name.lower()}_model",
@@ -153,27 +175,36 @@ def main():
         best_model = results[best_model_name]['model']
         
         cv = DoubleKFoldCV(
-            outer_splits=3,
-            inner_splits=2,
+            outer_splits=5,
+            inner_splits=4,
             random_state=config.random_state,
             stratify=False,  # multi-output continuous y is incompatible with StratifiedKFold
         )
 
         rf_param_grid = {
-            'n_estimators': [20, 50],
-            'max_depth': [None, 5],
-            'min_samples_split': [2, 5],
+            'n_estimators' : [5, 10, 15, 20, 23, 25, 30],
+            'max_depth' : [2, 5, 6, 7, 8, 12, 15, 19, None],
+            'min_samples_leaf' : [1, 3, 5, 10],
+            'min_samples_split' : [2, 3, 5, 8, 10, 15, 20, 30],
+            'criterion' : ['poisson', 'friedman_mse', 'squared_error', 'absolute_error'],
             'max_features': ['sqrt', 'log2'],
         }
         # DoubleKFoldCV uses RandomizedSearchCV and requires a sklearn-compatible estimator
         rf_estimator = results['RandomForest']['model'].model
-        cv_scores = cv.fit(X, y, rf_estimator, rf_param_grid, n_iter=5)
+        cv_scores = cv.fit(X, y, rf_estimator, rf_param_grid, n_iter=64)
 
         logger.info("Cross-validation results for RandomForest:")
         test_r2 = np.array([np.mean(s['r2_score']) for s in cv_scores['test_scores']])
         test_rmse = np.array([np.mean(s['rmse']) for s in cv_scores['test_scores']])
         logger.info(f"R²: {np.mean(test_r2):.4f} ± {np.std(test_r2):.4f}")
         logger.info(f"RMSE: {np.mean(test_rmse):.4f} ± {np.std(test_rmse):.4f}")
+
+        # Save per-target CV metrics to CSV
+        experiment_manager.save_cv_results_csv(
+            cv_scores,
+            target_names=targets_df.columns.tolist(),
+            filename="cv_results_randomforest.csv"
+        )
         
         # 4. CLUSTERING ANALYSIS
         logger.info("=== Clustering Analysis ===")
