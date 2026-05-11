@@ -6,6 +6,7 @@ import pandas as pd
 import numpy as np
 from typing import Tuple, List, Optional, Dict, Any, Union
 from scipy.ndimage import gaussian_filter1d
+from scipy.signal import savgol_filter
 from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler
 from sklearn.decomposition import PCA
 from sklearn.impute import SimpleImputer
@@ -206,6 +207,133 @@ class Preprocessor:
             columns=features_df.columns,
             index=features_df.index,
         )
+
+    def apply_savitzky_golay(
+        self,
+        features_df: pd.DataFrame,
+        window_length: int = 11,
+        polyorder: int = 3,
+        deriv: int = 0,
+        delta: float = 1.0,
+    ) -> pd.DataFrame:
+        """
+        Apply Savitzky-Golay filter row-wise to spectral features.
+
+        Suitable for NIR spectra: use ``deriv=0`` for smoothing, ``deriv=1``
+        for the first derivative, or ``deriv=2`` for the second derivative.
+        Derivatives remove additive and multiplicative baselines and can
+        sharpen spectral features.
+
+        Parameters
+        ----------
+        features_df : pd.DataFrame
+            Spectral features (rows = samples, columns = wavenumbers /
+            wavelengths).
+        window_length : int
+            Length of the filter window. Must be a positive odd integer
+            greater than ``polyorder``. Automatically bumped to the next odd
+            integer if an even value is supplied.
+        polyorder : int
+            Polynomial order used for the least-squares fit within each
+            window.
+        deriv : int
+            Derivative order. 0 = smoothing only, 1 = first derivative,
+            2 = second derivative.
+        delta : float
+            Spacing between consecutive samples on the spectral axis
+            (e.g. 16.0 cm⁻¹ for a downsampled NIR grid). Affects the
+            physical scale of derivatives but not ML performance when
+            followed by normalisation.
+
+        Returns
+        -------
+        pd.DataFrame
+            Filtered (or differentiated) features with the same shape and
+            column names as the input.
+        """
+        if window_length % 2 == 0:
+            window_length += 1
+        if window_length <= polyorder:
+            window_length = polyorder + 2 if (polyorder + 2) % 2 == 1 else polyorder + 3
+
+        self.logger.info(
+            f"Applying Savitzky-Golay filter "
+            f"(window={window_length}, poly={polyorder}, deriv={deriv})"
+        )
+        sg_data = savgol_filter(
+            features_df.values.astype(float),
+            window_length=window_length,
+            polyorder=polyorder,
+            deriv=deriv,
+            delta=delta,
+            axis=1,
+            mode="interp",
+        )
+        return pd.DataFrame(sg_data, columns=features_df.columns, index=features_df.index)
+
+    def apply_snv(self, features_df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Apply Standard Normal Variate (SNV) normalisation row-wise.
+
+        Each spectrum is centred by its mean and scaled by its standard
+        deviation. SNV is the standard first step for NIR reflectance /
+        transmittance data because it removes multiplicative scatter
+        differences between samples without requiring a reference.
+
+        Parameters
+        ----------
+        features_df : pd.DataFrame
+            Spectral features DataFrame (rows = samples, columns = channels).
+
+        Returns
+        -------
+        pd.DataFrame
+            SNV-normalised DataFrame with the same shape and column names.
+        """
+        self.logger.info("Applying SNV normalisation")
+        X = features_df.values.astype(float)
+        row_mean = X.mean(axis=1, keepdims=True)
+        row_std = X.std(axis=1, keepdims=True)
+        snv = (X - row_mean) / np.where(row_std == 0, 1.0, row_std)
+        return pd.DataFrame(snv, columns=features_df.columns, index=features_df.index)
+
+    def apply_msc(
+        self,
+        features_df: pd.DataFrame,
+        reference: Optional[np.ndarray] = None,
+    ) -> pd.DataFrame:
+        """
+        Apply Multiplicative Scatter Correction (MSC) to spectral features.
+
+        For each spectrum, a linear model is fitted against a reference
+        spectrum and the estimated additive offset and slope are used to
+        correct multiplicative and additive scatter effects.
+
+        Parameters
+        ----------
+        features_df : pd.DataFrame
+            Spectral features DataFrame (rows = samples).
+        reference : np.ndarray, optional
+            1-D reference spectrum (length = n_features). Defaults to the
+            column-wise mean of ``features_df``.
+
+        Returns
+        -------
+        pd.DataFrame
+            MSC-corrected DataFrame with the same shape and column names.
+        """
+        X = features_df.values.astype(float)
+        if reference is None:
+            reference = X.mean(axis=0)
+
+        self.logger.info("Applying MSC correction")
+        corrected = np.empty_like(X)
+        for i, spectrum in enumerate(X):
+            coeffs = np.polyfit(reference, spectrum, 1)
+            a, b = coeffs[0], coeffs[1]
+            corrected[i] = (spectrum - b) / (a if abs(a) > 1e-10 else 1.0)
+
+        return pd.DataFrame(corrected, columns=features_df.columns, index=features_df.index)
 
     def normalize_features(
         self,

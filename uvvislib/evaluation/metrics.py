@@ -55,19 +55,22 @@ def r2_score(x: np.ndarray, y: np.ndarray) -> Union[float, np.ndarray]:
 def r2_score_single(x: np.ndarray, y: np.ndarray) -> float:
     """
     Calculate R-squared score for single target regression.
-    
+
     Args:
         x: Predicted values (flattened)
         y: True values (flattened)
-        
+
     Returns:
         R-squared score
-        
+
     Example:
         >>> r2_score_single([1, 2, 3], [1.1, 1.9, 3.1])
         0.9999999999999999
     """
-    r2 = polyfit(x.flatten(), y.flatten(), 1)['determination']
+    try:
+        r2 = polyfit(x.flatten(), y.flatten(), 1)['determination']
+    except Exception:
+        return float('-inf')
     if r2 > 1:
         r2 = float('-inf')
     return r2
@@ -76,34 +79,35 @@ def r2_score_single(x: np.ndarray, y: np.ndarray) -> float:
 def polyfit(x: np.ndarray, y: np.ndarray, degree: int) -> dict:
     """
     Perform polynomial fitting and return results.
-    
+
     Args:
         x: Independent variable
         y: Dependent variable
         degree: Degree of polynomial
-        
+
     Returns:
         Dictionary containing polynomial coefficients and R-squared value
-        
+
     Example:
         >>> result = polyfit([1, 2, 3], [2, 4, 6], 1)
         >>> result['determination']
         1.0
     """
-    results = {}
-    
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+
+    ybar = np.mean(y)
+    sstot = np.sum((y - ybar) ** 2)
+
+    # Constant predictions → polyfit SVD fails; constant true values → sstot=0
+    if np.std(x) < 1e-10 or sstot < 1e-20:
+        return {'polynomial': [], 'determination': 0.0}
+
     coeffs = np.polyfit(x, y, degree)
-    results['polynomial'] = coeffs.tolist()
-    
-    # R-squared calculation
     p = np.poly1d(coeffs)
     yhat = p(x)
-    ybar = np.sum(y) / len(y)
     ssreg = np.sum((yhat - ybar) ** 2)
-    sstot = np.sum((y - ybar) ** 2)
-    results['determination'] = ssreg / sstot
-    
-    return results
+    return {'polynomial': coeffs.tolist(), 'determination': ssreg / sstot}
 
 
 def mape(y_true: np.ndarray, y_pred: np.ndarray) -> Union[float, np.ndarray]:
