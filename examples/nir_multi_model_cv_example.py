@@ -88,34 +88,35 @@ ALL_TARGETS = [
 
 class SklearnMLPWrapper(BaseEstimator, RegressorMixin):
     """
-    Thin sklearn-compatible wrapper around the library's single-hidden-layer
-    PyTorch MLP.
+    sklearn-compatible multi-layer PyTorch MLP for use in CV_MODELS.
 
-    Implements the sklearn estimator protocol via BaseEstimator (get_params /
-    set_params are inherited automatically from the __init__ signature) so this
-    class works with sklearn.base.clone() and optionally with
-    RandomizedSearchCV when a param_grid is supplied in CV_MODELS.
+    hidden_layers is a tuple of hidden-unit counts, one entry per layer.
+    Examples:
+        (128,)           → single hidden layer  (shallow)
+        (256, 128)       → two hidden layers
+        (256, 128, 64)   → three hidden layers  (deep)
 
-    All constructor parameters are valid HPO axes when using double K-Fold CV.
+    get_params / set_params are inherited from BaseEstimator (introspects
+    __init__ automatically), so clone() and RandomizedSearchCV work without
+    any extra code. hidden_layers must be a tuple (not a list) because
+    sklearn requires hashable parameter values.
     """
 
     def __init__(
         self,
-        hidden_size: int = 128,
+        hidden_layers: tuple = (128,),
         learning_rate: float = 1e-3,
         weight_decay: float = 0.0,
         dropout_rate: float = 0.0,
         epochs: int = 150,
         activation: str = "relu",
     ):
-        self.hidden_size   = hidden_size
+        self.hidden_layers = hidden_layers
         self.learning_rate = learning_rate
         self.weight_decay  = weight_decay
         self.dropout_rate  = dropout_rate
         self.epochs        = epochs
         self.activation    = activation
-
-    # get_params / set_params inherited from BaseEstimator — no override needed.
 
     def fit(self, X, y):
         X = np.asarray(X, dtype=np.float32)
@@ -127,10 +128,19 @@ class SklearnMLPWrapper(BaseEstimator, RegressorMixin):
         self._device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         _act = {"sigmoid": nn.Sigmoid, "relu": nn.ReLU, "tanh": nn.Tanh}
-        self._net = _TorchMLP(
-            n_inputs=n_in, hidden_size=self.hidden_size, n_output=n_out,
-            activation=_act[self.activation], dropout_rate=self.dropout_rate,
-        ).to(self._device)
+        act_cls = _act[self.activation]
+
+        # Build a fully connected stack: n_in → h0 → h1 → ... → n_out
+        layers: list[nn.Module] = []
+        in_size = n_in
+        for h in self.hidden_layers:
+            layers.append(nn.Linear(in_size, h))
+            layers.append(act_cls())
+            if self.dropout_rate > 0:
+                layers.append(nn.Dropout(self.dropout_rate))
+            in_size = h
+        layers.append(nn.Linear(in_size, n_out))
+        self._net = nn.Sequential(*layers).to(self._device)
 
         opt  = optim.Adam(self._net.parameters(),
                           lr=self.learning_rate, weight_decay=self.weight_decay)
@@ -664,14 +674,22 @@ def main():
                 "name": "MLP",
                 "estimator": SklearnMLPWrapper(),
                 "param_grid": {
-                    "hidden_size":   [64, 128, 256],
+                    # Architecture: tuples encode layer sizes (shallow → deep)
+                    "hidden_layers": [
+                        (128,),
+                        (256,),
+                        (256, 128),
+                        (256, 128, 64),
+                        (512, 256, 128),
+                        (512, 256, 128, 64),
+                    ],
                     "learning_rate": [1e-3, 5e-4, 1e-4],
                     "weight_decay":  [0.0, 1e-4, 1e-3],
                     "dropout_rate":  [0.0, 0.1, 0.2],
-                    "epochs":        [150, 250, 400],
+                    "epochs":        [200, 400, 600],
                     "activation":    ["relu", "tanh"],
                 },
-                "n_iter": 15,
+                "n_iter": 20,
             },
         ]
 
