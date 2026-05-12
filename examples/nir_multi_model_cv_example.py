@@ -662,12 +662,16 @@ def main():
             },
             {
                 "name": "MLP",
-                "estimator": SklearnMLPWrapper(
-                    hidden_size=128, learning_rate=1e-3, weight_decay=1e-4,
-                    dropout_rate=0.1, epochs=150, activation="relu",
-                ),
-                "param_grid": None,  # simple K-Fold, no HPO
-                "n_iter": 0,
+                "estimator": SklearnMLPWrapper(),
+                "param_grid": {
+                    "hidden_size":   [64, 128, 256],
+                    "learning_rate": [1e-3, 5e-4, 1e-4],
+                    "weight_decay":  [0.0, 1e-4, 1e-3],
+                    "dropout_rate":  [0.0, 0.1, 0.2],
+                    "epochs":        [150, 250, 400],
+                    "activation":    ["relu", "tanh"],
+                },
+                "n_iter": 15,
             },
         ]
 
