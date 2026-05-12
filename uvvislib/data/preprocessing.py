@@ -297,6 +297,37 @@ class Preprocessor:
         snv = (X - row_mean) / np.where(row_std == 0, 1.0, row_std)
         return pd.DataFrame(snv, columns=features_df.columns, index=features_df.index)
 
+    def apply_water_subtraction(
+        self,
+        features_df: pd.DataFrame,
+        water_reference: np.ndarray,
+    ) -> pd.DataFrame:
+        """
+        Subtract a water background spectrum from NIR features.
+
+        Removes the dominant water absorption baseline so the residual signal
+        reflects dissolved analyte contributions. Supports both a single
+        reference (broadcast to all samples) and a per-sample reference
+        (week-matched correction).
+
+        Parameters
+        ----------
+        features_df : pd.DataFrame
+            NIR absorbance spectra (n_samples × n_wavenumbers).
+        water_reference : np.ndarray, shape (n_wavenumbers,) or (n_samples, n_wavenumbers)
+            Water background to subtract. A 1-D array is broadcast across all
+            rows; a 2-D array is subtracted row-wise (week-matched correction).
+
+        Returns
+        -------
+        pd.DataFrame
+            Background-corrected spectra with the same index and columns.
+        """
+        self.logger.info("Applying water background subtraction")
+        ref = np.asarray(water_reference, dtype=float)
+        corrected = features_df.values.astype(float) - ref
+        return pd.DataFrame(corrected, columns=features_df.columns, index=features_df.index)
+
     def apply_msc(
         self,
         features_df: pd.DataFrame,
